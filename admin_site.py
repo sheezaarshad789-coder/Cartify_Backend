@@ -8,8 +8,8 @@ from fastapi_amis_admin.admin.settings import Settings
 from fastapi_amis_admin.admin.site import AdminSite
 from sqlalchemy_database import AsyncDatabase
 
-from backend.data_store import hash_password
-from backend.models import (
+from data_store import hash_password
+from models import (
     AddressModel,
     CartItemModel,
     CategoryModel,

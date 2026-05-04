@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.data_store import (
+from data_store import (
     ADDRESSES,
     CATEGORIES,
     MESSAGES,
@@ -9,7 +9,7 @@ from backend.data_store import (
     STORES,
     USERS,
 )
-from backend.models import (
+from models import (
     AddressModel,
     CategoryModel,
     MessageModel,

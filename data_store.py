@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from passlib.context import CryptContext
 
-from backend.schemas import (
+from schemas import (
     Address,
     CartItemResponse,
     Category,

@@ -6,9 +6,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import delete, select, text
 
-from backend.data_store import hash_password, verify_password
-from backend.db import DEV_SQLITE_MODE, SessionLocal, engine
-from backend.models import (
+from data_store import hash_password, verify_password
+from db import DEV_SQLITE_MODE, SessionLocal, engine
+from models import (
     AddressModel,
     Base,
     CartItemModel,
@@ -20,8 +20,8 @@ from backend.models import (
     StoreModel,
     UserModel,
 )
-from backend.seed import seed_initial_data
-from backend.schemas import (
+from seed import seed_initial_data
+from schemas import (
     Address,
     AuthResponse,
     CartItem,
@@ -474,7 +474,7 @@ def delete_address(address_id: str):
 
 # -------------------- ADMIN (Amis; Postgres only — dev SQLite par skip) --------------------
 if not DEV_SQLITE_MODE:
-    from backend.admin_site import mount_cartify_admin
+    from admin_site import mount_cartify_admin
 
     mount_cartify_admin(app)
 
