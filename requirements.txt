@@ -1,0 +1,15 @@
+# FastAPI-Amis-Admin (0.7.x) needs FastAPI ~0.111 + sqlmodel 0.0.22 (newer FastAPI/sqlmodel break imports).
+fastapi==0.111.0
+starlette>=0.37.2,<0.38
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-dotenv
+email-validator
+passlib[bcrypt]
+mangum
+fastapi-amis-admin>=0.6,<0.8
+asyncpg
+jinja2
+pydantic-settings
+sqlmodel==0.0.22
