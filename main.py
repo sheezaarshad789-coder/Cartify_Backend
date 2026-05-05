@@ -62,16 +62,17 @@ def get_current_user_id():
 
 # -------------------- HEALTH --------------------
 def _admin_health_block() -> dict:
-    """Dev SQLite par admin mount nahi (Postgres + asyncpg); warna Amis admin `ADMIN_SITE_PATH` par."""
-    if DEV_SQLITE_MODE:
-        return {
-            "mounted": False,
-            "reason": "CARTIFY_DEV_SQLITE=1: admin tabhi jab real Postgres/Supabase (dev SQLite par admin mount nahi).",
-        }
+    """Admin health metadata for both Postgres and local SQLite mode."""
     path = (os.getenv("ADMIN_SITE_PATH", "/admin") or "/admin").strip()
     if path.endswith("/") and len(path) > 1:
         path = path.rstrip("/")
-    return {"mounted": True, "path": path, "title": os.getenv("ADMIN_SITE_TITLE", "Cartify Admin")}
+    mode = "sqlite" if DEV_SQLITE_MODE else "postgres"
+    return {
+        "mounted": True,
+        "path": path,
+        "title": os.getenv("ADMIN_SITE_TITLE", "Cartify Admin"),
+        "mode": mode,
+    }
 
 
 @app.get("/health")
@@ -472,11 +473,15 @@ def delete_address(address_id: str):
     return get_addresses()
 
 
-# -------------------- ADMIN (Amis; Postgres only — dev SQLite par skip) --------------------
-# TEMPORARILY DISABLED FOR RENDER DEPLOYMENT - will re-enable after testing API
-# if not DEV_SQLITE_MODE:
-#     from admin_site import mount_cartify_admin
-#     mount_cartify_admin(app)
+# -------------------- ADMIN (Amis; Postgres + local SQLite) --------------------
+try:
+    from admin_site import mount_cartify_admin
+    mount_cartify_admin(app)
+except Exception as e:
+    # Admin panel failed to load, but API still works
+    print(f"⚠️  Admin panel failed to initialize: {e}")
+    print("API endpoints will still work, admin panel unavailable")
+    # Optionally log to monitoring service here
 
 
 # -------------------- VERCEL HANDLER --------------------

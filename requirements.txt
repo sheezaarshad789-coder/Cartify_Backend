@@ -10,6 +10,7 @@ passlib[bcrypt]
 mangum
 fastapi-amis-admin>=0.6,<0.8
 asyncpg
+aiosqlite
 jinja2
 pydantic-settings
 sqlmodel==0.0.22
