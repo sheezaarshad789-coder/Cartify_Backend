@@ -30,13 +30,6 @@ else:
         raise RuntimeError(
             "Supabase-only setup is enabled. DATABASE_URL must point to a Supabase host (.supabase.co or .supabase.com)."
         )
-    _creds = DATABASE_URL.split("@", 1)[0] if "@" in DATABASE_URL else DATABASE_URL
-    if "project-ref" in _creds.lower() or ("<" in _creds and ">" in _creds):
-        raise RuntimeError(
-            "DATABASE_URL mein abhi placeholder username hai (jaise postgres.<project-ref>). "
-            "Supabase Dashboard → Project Settings → Database se poori **URI copy** karo; "
-            "username `postgres.<tumhara_asli_ref>` hona chahiye — angle brackets wala template nahi."
-        )
 
 if DATABASE_URL.startswith("sqlite"):
     engine = create_engine(
