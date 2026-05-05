@@ -54,6 +54,7 @@ def build_admin_site() -> AdminSite:
         site_path=os.getenv("ADMIN_SITE_PATH", "/admin"),
         language=os.getenv("ADMIN_LANGUAGE", "en_US"),
         database_url_async=db_url,
+        file_directory="/tmp",  # Vercel serverless mein writable directory
     )
     site = AdminSite(settings=settings, engine=_admin_async_engine())
 
