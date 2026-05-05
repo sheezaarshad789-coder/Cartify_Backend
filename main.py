@@ -473,10 +473,10 @@ def delete_address(address_id: str):
 
 
 # -------------------- ADMIN (Amis; Postgres only — dev SQLite par skip) --------------------
-if not DEV_SQLITE_MODE:
-    from admin_site import mount_cartify_admin
-
-    mount_cartify_admin(app)
+# TEMPORARILY DISABLED FOR RENDER DEPLOYMENT - will re-enable after testing API
+# if not DEV_SQLITE_MODE:
+#     from admin_site import mount_cartify_admin
+#     mount_cartify_admin(app)
 
 
 # -------------------- VERCEL HANDLER --------------------
