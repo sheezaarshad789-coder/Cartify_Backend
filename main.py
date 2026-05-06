@@ -1,8 +1,9 @@
 import os
 from datetime import date
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import delete, select, text
 
@@ -54,10 +55,88 @@ def on_startup():
     with SessionLocal() as db:
         seed_initial_data(db)
 
-# -------------------- SIMPLE AUTH PLACEHOLDER --------------------
-# NOTE: Replace with JWT auth in production
-def get_current_user_id():
-    return "u1"  # demo user from seed; TODO: replace with real auth
+# -------------------- AUTH (login token -> cart / orders) --------------------
+# App login returns "token-{user.id}". Send: Authorization: Bearer token-<userId>
+# No header => demo user u1 (seed) for quick tests without a client.
+def get_current_user_id(
+    authorization: Annotated[str | None, Header()] = None,
+) -> str:
+    if not authorization:
+        return "u1"
+    t = authorization.strip()
+    if t.lower().startswith("bearer "):
+        t = t[7:].strip()
+    if not t.startswith("token-"):
+        raise HTTPException(
+            status_code=401,
+            detail="Expected Authorization: Bearer token-<userId> (from /auth/login)",
+        )
+    user_id = t[6:].strip()
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    with SessionLocal() as db:
+        if not db.get(UserModel, user_id):
+            raise HTTPException(status_code=401, detail="Invalid token")
+    return user_id
+
+
+def _cart_body_for_user(user_id: str) -> dict:
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(CartItemModel).where(CartItemModel.user_id == user_id)
+        ).scalars().all()
+
+        items = []
+        subtotal = 0.0
+
+        for row in rows:
+            product = db.get(ProductModel, row.product_id)
+            if not product:
+                continue
+
+            items.append(
+                {
+                    "product": product,
+                    "quantity": row.quantity,
+                }
+            )
+            subtotal += product.price * row.quantity
+
+        delivery_fee = 50.0 if items else 0.0
+
+        return {
+            "items": items,
+            "subtotal": subtotal,
+            "delivery_fee": delivery_fee,
+            "total": subtotal + delivery_fee,
+        }
+
+
+def _order_detail_for_user(order_id: str, user_id: str) -> dict:
+    with SessionLocal() as db:
+        order = db.get(OrderModel, order_id)
+        if not order or order.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Order not found")
+
+        rows = db.execute(
+            select(OrderItemModel).where(OrderItemModel.order_id == order_id)
+        ).scalars().all()
+
+        items_payload = []
+        for it in rows:
+            product = db.get(ProductModel, it.product_id)
+            if not product:
+                continue
+            items_payload.append({"product": product, "quantity": it.quantity})
+
+        return {
+            "id": order.id,
+            "store_name": order.store_name,
+            "status": order.status,
+            "date": order.date,
+            "total_amount": order.total_amount,
+            "items": items_payload,
+        }
 
 
 # -------------------- HEALTH --------------------
@@ -221,44 +300,15 @@ def get_product_detail(product_id: str):
 
 # -------------------- CART (USER BASED FIXED) --------------------
 @app.get("/cart", response_model=CartResponse)
-def get_cart():
-    user_id = get_current_user_id()
-
-    with SessionLocal() as db:
-        rows = db.execute(
-            select(CartItemModel).where(CartItemModel.user_id == user_id)
-        ).scalars().all()
-
-        items = []
-        subtotal = 0.0
-
-        for row in rows:
-            product = db.get(ProductModel, row.product_id)
-            if not product:
-                continue
-
-            items.append(
-                {
-                    "product": product,
-                    "quantity": row.quantity,
-                }
-            )
-            subtotal += product.price * row.quantity
-
-        delivery_fee = 50.0 if items else 0.0
-
-        return {
-            "items": items,
-            "subtotal": subtotal,
-            "delivery_fee": delivery_fee,
-            "total": subtotal + delivery_fee,
-        }
+def get_cart(user_id: Annotated[str, Depends(get_current_user_id)]):
+    return _cart_body_for_user(user_id)
 
 
 @app.post("/cart/items", response_model=CartResponse)
-def add_cart_item(payload: CartItem):
-    user_id = get_current_user_id()
-
+def add_cart_item(
+    payload: CartItem,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
     with SessionLocal() as db:
         product = db.get(ProductModel, payload.product_id)
         if not product:
@@ -284,13 +334,15 @@ def add_cart_item(payload: CartItem):
 
         db.commit()
 
-    return get_cart()
+    return _cart_body_for_user(user_id)
 
 
 @app.patch("/cart/items/{product_id}", response_model=CartResponse)
-def update_cart_item(product_id: str, payload: CartItem):
-    user_id = get_current_user_id()
-
+def update_cart_item(
+    product_id: str,
+    payload: CartItem,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
     with SessionLocal() as db:
         item = db.execute(
             select(CartItemModel).where(
@@ -312,13 +364,14 @@ def update_cart_item(product_id: str, payload: CartItem):
 
         db.commit()
 
-    return get_cart()
+    return _cart_body_for_user(user_id)
 
 
 @app.delete("/cart/items/{product_id}", response_model=CartResponse)
-def delete_cart_item(product_id: str):
-    user_id = get_current_user_id()
-
+def delete_cart_item(
+    product_id: str,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
     with SessionLocal() as db:
         item = db.execute(
             select(CartItemModel).where(
@@ -331,14 +384,15 @@ def delete_cart_item(product_id: str):
             db.delete(item)
             db.commit()
 
-    return get_cart()
+    return _cart_body_for_user(user_id)
 
 
 # -------------------- ORDERS (FIXED RETURN) --------------------
 @app.post("/orders", response_model=Order)
-def create_order(payload: Order):
-    user_id = get_current_user_id()
-
+def create_order(
+    payload: Order,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
     with SessionLocal() as db:
         order_id = f"ord_{uuid4().hex[:8]}"
         order_date = str(date.today())
@@ -372,12 +426,11 @@ def create_order(payload: Order):
 
         db.commit()
 
-    return get_order_detail(order_id)
+    return _order_detail_for_user(order_id, user_id)
 
 
 @app.get("/orders", response_model=list[Order])
-def get_orders():
-    user_id = get_current_user_id()
+def get_orders(user_id: Annotated[str, Depends(get_current_user_id)]):
     with SessionLocal() as db:
         rows = db.execute(
             select(OrderModel).where(OrderModel.user_id == user_id)
@@ -397,32 +450,11 @@ def get_orders():
 
 
 @app.get("/orders/{order_id}", response_model=Order)
-def get_order_detail(order_id: str):
-    user_id = get_current_user_id()
-    with SessionLocal() as db:
-        order = db.get(OrderModel, order_id)
-        if not order or order.user_id != user_id:
-            raise HTTPException(status_code=404, detail="Order not found")
-
-        rows = db.execute(
-            select(OrderItemModel).where(OrderItemModel.order_id == order_id)
-        ).scalars().all()
-
-        items_payload = []
-        for it in rows:
-            product = db.get(ProductModel, it.product_id)
-            if not product:
-                continue
-            items_payload.append({"product": product, "quantity": it.quantity})
-
-        return {
-            "id": order.id,
-            "store_name": order.store_name,
-            "status": order.status,
-            "date": order.date,
-            "total_amount": order.total_amount,
-            "items": items_payload,
-        }
+def get_order_detail(
+    order_id: str,
+    user_id: Annotated[str, Depends(get_current_user_id)],
+):
+    return _order_detail_for_user(order_id, user_id)
 
 
 # -------------------- MESSAGES --------------------

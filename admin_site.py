@@ -6,15 +6,16 @@ Organization: DevSquad
 
 import os
 import logging
+import tempfile
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import FastAPI
 from fastapi_amis_admin.admin import admin
 from fastapi_amis_admin.admin.settings import Settings
 from fastapi_amis_admin.admin.site import AdminSite
 from sqlalchemy_database import AsyncDatabase
-from sqlalchemy.ext.asyncio import create_async_engine
 
 # Local imports
 try:
@@ -36,12 +37,23 @@ except ImportError as e:
 # Logger setup
 logger = logging.getLogger("cartify_admin")
 
+
+def _ensure_entity_id(data: dict, prefix: str) -> dict:
+    """
+    AMIS create form mein agar id empty ho to safe unique id generate karo.
+    """
+    if not data.get("id"):
+        data["id"] = f"{prefix}{uuid4().hex[:10]}"
+    return data
+
 def _prepare_db_url() -> str:
     """
-    Cleans and formats the DATABASE_URL. 
-    Ensures it uses 'postgresql+asyncpg://' for the Admin UI.
+    Same logical DB as `db.py` (sync API): Postgres async URL for admin, or SQLite+aiosqlite when dev / auto-fallback.
     """
-    if os.getenv("CARTIFY_DEV_SQLITE", "").strip().lower() in ("1", "true", "yes"):
+    from db import DATABASE_URL as sync_database_url
+    from db import DEV_SQLITE_MODE
+
+    if DEV_SQLITE_MODE or str(sync_database_url).startswith("sqlite"):
         sqlite_file = Path(__file__).resolve().parent / "cartify_dev.db"
         return f"sqlite+aiosqlite:///{sqlite_file.as_posix()}"
 
@@ -81,7 +93,7 @@ def _admin_async_engine() -> AsyncDatabase:
             echo=os.getenv("ADMIN_DEBUG", "false").lower() == "true",
             pool_pre_ping=True,
             pool_recycle=300,
-            connect_args=connect_args or None,
+            connect_args=connect_args,
         )
     except Exception as e:
         logger.error(f"❌ Failed to create database engine: {e}")
@@ -94,7 +106,7 @@ def build_admin_site() -> AdminSite:
     db_url = _prepare_db_url()
     
     # Vercel/Render/Local Read-only fix for uploads
-    temp_upload_dir = "/tmp/amis_uploads"
+    temp_upload_dir = os.path.join(tempfile.gettempdir(), "amis_uploads")
     if not os.path.exists(temp_upload_dir):
         try:
             os.makedirs(temp_upload_dir, exist_ok=True)
@@ -118,6 +130,12 @@ def build_admin_site() -> AdminSite:
         page_schema = "Categories"
         model = CategoryModel
         icon = "fa fa-list"
+        list_display = [CategoryModel.id, CategoryModel.name]
+        search_fields = [CategoryModel.name]
+
+        async def on_create_pre(self, request, obj, **kwargs):
+            data = await super().on_create_pre(request, obj, **kwargs)
+            return _ensure_entity_id(data, "c")
 
     @site.register_admin
     class StoreAdmin(admin.ModelAdmin):
@@ -126,6 +144,10 @@ def build_admin_site() -> AdminSite:
         icon = "fa fa-store"
         list_display = [StoreModel.id, StoreModel.name]
 
+        async def on_create_pre(self, request, obj, **kwargs):
+            data = await super().on_create_pre(request, obj, **kwargs)
+            return _ensure_entity_id(data, "s")
+
     @site.register_admin
     class ProductAdmin(admin.ModelAdmin):
         page_schema = "Products"
@@ -133,6 +155,10 @@ def build_admin_site() -> AdminSite:
         icon = "fa fa-shopping-bag"
         search_fields = [ProductModel.name]
         list_display = [ProductModel.id, ProductModel.name, ProductModel.price]
+
+        async def on_create_pre(self, request, obj, **kwargs):
+            data = await super().on_create_pre(request, obj, **kwargs)
+            return _ensure_entity_id(data, "p")
 
     @site.register_admin
     class UserAdmin(admin.ModelAdmin):
@@ -144,6 +170,7 @@ def build_admin_site() -> AdminSite:
 
         async def on_create_pre(self, request, obj, **kwargs):
             data = await super().on_create_pre(request, obj, **kwargs)
+            data = _ensure_entity_id(data, "u")
             pw = data.get("password")
             if pw:
                 data["password"] = hash_password(str(pw))
@@ -163,6 +190,10 @@ def build_admin_site() -> AdminSite:
         icon = "fa fa-truck"
         list_filter = [OrderModel.status]
 
+        async def on_create_pre(self, request, obj, **kwargs):
+            data = await super().on_create_pre(request, obj, **kwargs)
+            return _ensure_entity_id(data, "ord_")
+
     @site.register_admin
     class OrderItemAdmin(admin.ModelAdmin):
         page_schema = "Order Items"
@@ -174,11 +205,19 @@ def build_admin_site() -> AdminSite:
         model = AddressModel
         icon = "fa fa-map-marker"
 
+        async def on_create_pre(self, request, obj, **kwargs):
+            data = await super().on_create_pre(request, obj, **kwargs)
+            return _ensure_entity_id(data, "a")
+
     @site.register_admin
     class MessageAdmin(admin.ModelAdmin):
         page_schema = "Messages"
         model = MessageModel
         icon = "fa fa-envelope"
+
+        async def on_create_pre(self, request, obj, **kwargs):
+            data = await super().on_create_pre(request, obj, **kwargs)
+            return _ensure_entity_id(data, "m")
 
     @site.register_admin
     class CartItemAdmin(admin.ModelAdmin):
